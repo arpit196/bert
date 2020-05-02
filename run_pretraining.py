@@ -262,8 +262,15 @@ def get_masked_lm_output(bert_config, input_tensor, output_weights, positions,
         initializer=tf.zeros_initializer())
     logits = tf.matmul(input_tensor, output_weights, transpose_b=True)
     logits = tf.nn.bias_add(logits, output_bias)
+    probs = tf.nn.softmax(logits)
+    topk = tf.nn.topk(probs, 4)
+    sum_probs = tf.nn.reduce_sum(topk, axis=-1)
+    threshold_p = 0.6
+    mask = tf.nn.where(tf.greater(sum_probs, threshold_p))
+    probs = probs*mask
+    logits = logits*mask
+    
     log_probs = tf.nn.log_softmax(logits, axis=-1)
-
     label_ids = tf.reshape(label_ids, [-1])
     label_weights = tf.reshape(label_weights, [-1])
 
@@ -274,7 +281,7 @@ def get_masked_lm_output(bert_config, input_tensor, output_weights, positions,
     # short to have the maximum number of predictions). The `label_weights`
     # tensor has a value of 1.0 for every real prediction and 0.0 for the
     # padding predictions.
-    per_example_loss = -tf.reduce_sum(log_probs * one_hot_labels, axis=[-1])
+    per_example_loss = -tf.reduce_sum(log_probs * (one_hot_labels*mask), axis=[-1])
     numerator = tf.reduce_sum(label_weights * per_example_loss)
     denominator = tf.reduce_sum(label_weights) + 1e-5
     loss = numerator / denominator
